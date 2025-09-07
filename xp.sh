@@ -83,3 +83,25 @@ sed -i "/^### $user $exp/d" "/etc/trojan-go/akun.conf"
 fi
 done
 systemctl restart trojan-go
+
+# oyenvpn tambah
+#----- Auto Remove Vless
+data=( `cat /usr/local/etc/xray/config.json | grep '^#vls' | cut -d ' ' -f 2 | sort | uniq`);
+now=`date +"%Y-%m-%d"`
+for user in "${data[@]}"
+do
+exp=$(grep -w "^#vls $user" "/usr/local/etc/xray/config.json" | cut -d ' ' -f 3 | sort | uniq)
+d1=$(date -d "$exp" +%s)
+d2=$(date -d "$now" +%s)
+exp2=$(( (d1 - d2) / 86400 ))
+if [[ "$exp2" -le "0" ]]; then
+sed -i "/^#vls $user $exp/,/^},{/d" /usr/local/etc/xray/config.json
+sed -i "/^#vls $user $exp/,/^},{/d" /usr/local/etc/xray/none.json
+fi
+done;sleep 5
+systemctl restart xray;sleep 5
+systemctl restart xray@none
+echo "done clear user exp"
+read -p "$( echo -e "Press ${orange}[ ${NC}${green}Enter${NC} ${CYAN}]${NC} Back to menu . . .") "
+menu
+sleep 1
