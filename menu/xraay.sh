@@ -805,7 +805,6 @@ patchnontls=/vlessnontls
 uuid=$(cat /proc/sys/kernel/random/uuid)
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
-read -p "   Input custom UUID (Press Enter For Random): " uuid_input
 read -p "   Expired (days) : " masaaktif
 bug_addr=${address}.
 bug_addr2=$address
@@ -820,35 +819,6 @@ sed -i '/#xray-vless-tls$/a\#vls '"$user $exp $harini $uuid"'\
 },{"id": "'""$uuid""'","email": "'""$user""'"' /usr/local/etc/xray/config.json
 sed -i '/#xray-vless-nontls$/a\#vls '"$user $exp $harini $uuid"'\
 },{"id": "'""$uuid""'","email": "'""$user""'"' /usr/local/etc/xray/none.json
-# function: normalize/validate uuid
-normalize_uuid() {
-  local u="$1"
-  # remove braces/quotes/spaces
-  u="${u//[\{\}\"]/}"
-  u="${u// /}"
-  # if 32 hex without dashes, add dashes
-  if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
-    echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  # if already dashed uuid pattern
-  if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
-    echo "$u" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  return 1
-}
-
-if [[ -z "$uuid_input" ]]; then
-  uuid="$(cat /proc/sys/kernel/random/uuid)"
-else
-  if normalized="$(normalize_uuid "$uuid_input")"; then
-    uuid="$normalized"
-  else
-    echo "UUID yang anda masukkan tidak sah. Akan generate automatik." >&2
-    uuid="$(cat /proc/sys/kernel/random/uuid)"
-  fi
-fi
 vlesslink1="vless://${uuid}@${sts}${domain}:$tls?path=$patchtls&security=tls&encryption=none&type=ws&sni=$sni#${user}"
 vlesslink2="vless://${uuid}@${sts}${domain}:$none?path=$patchnontls&encryption=none&host=$sni&type=ws#${user}"
 systemctl restart xray
