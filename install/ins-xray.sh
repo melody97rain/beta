@@ -62,7 +62,16 @@ cat> /usr/local/etc/xray/config.json << END
     "error": "/var/log/xray/error.log",
     "loglevel": "info"
        },
-    "inbounds": [
+   "inbounds": [
+        {
+      "listen": "127.0.0.1",
+      "port": 10086, # CEK USER QUOTA
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      },
+      "tag": "api"
+            },
         {
             "port": 443,
             "protocol": "vless",
@@ -259,7 +268,16 @@ cat> /usr/local/etc/xray/none.json << END
     "error": "/var/log/xray/error.log",
     "loglevel": "info"
   },
-  "inbounds": [
+     "inbounds": [
+        {
+      "listen": "127.0.0.1",
+      "port": 10085, # CEK USER QUOTA
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      },
+      "tag": "api"
+            },
     {
             "port": 8443,
             "protocol": "vmess",
