@@ -124,7 +124,7 @@ trojaan
 ssh
 ;;
 4)
-wget -q https://raw.githubusercontent.com/NiLphreakz/noobzvpns/main/m-noobz && chmod +x m-noobz && ./m-noobz
+clear;wget -q https://raw.githubusercontent.com/NiLphreakz/noobzvpns/main/m-noobz && chmod +x m-noobz && ./m-noobz
 ;;
 5)
 system
