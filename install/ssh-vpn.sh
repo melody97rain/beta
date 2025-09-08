@@ -274,6 +274,7 @@ cd /usr/bin
 wget -O add-host "https://raw.githubusercontent.com/melody97rain/beta/main/system/add-host.sh"
 wget -O about "https://raw.githubusercontent.com/melody97rain/beta/main/system/about.sh"
 wget -O menu "https://raw.githubusercontent.com/melody97rain/beta/main/menu.sh"
+wget -O xray-usage "https://raw.githubusercontent.com/melody97rain/beta/main/xray-usage.sh"
 wget -O add-ssh "https://raw.githubusercontent.com/melody97rain/beta/main/add-user/add-ssh.sh"
 wget -O trial "https://raw.githubusercontent.com/melody97rain/beta/main/add-user/trial.sh"
 wget -O del-ssh "https://raw.githubusercontent.com/melody97rain/beta/main/delete-user/del-ssh.sh"
@@ -317,6 +318,7 @@ wget -O system "https://raw.githubusercontent.com/melody97rain/beta/main/menu/sy
 wget -O themes "https://raw.githubusercontent.com/melody97rain/beta/main/menu/themes.sh"
 chmod +x add-host
 chmod +x menu
+chmod +x xray-usage
 chmod +x add-ssh
 chmod +x trial
 chmod +x del-ssh
