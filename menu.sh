@@ -103,7 +103,7 @@ echo -e   "  \e[$number (•3)\e[m \e[$below OPENSSH & OPENVPN\e[m           \e[
 echo -e   "  \e[$number (•4)\e[m \e[$below PANEL NOOBZVPN\e[m              \e[$number (11)\e[m \e[$below INFO ALL PORT\e[m"
 echo -e   "  \e[$number (•5)\e[m \e[$below SYSTEM MENU\e[m                 \e[$number (12)\e[m \e[$below DAILY BANDWIDTH\e[m"
 echo -e   "  \e[$number (•6)\e[m \e[$below MENU THEMES\e[m                 \e[$number (13)\e[m \e[$below MONTHLY BANDWIDTH\e[m"
-echo -e   "  \e[$number (•7)\e[m \e[$below CHANGE PORT\e[m                 \e[$number (14)\e[m \e[$below CHECK CPU & RAM\e[m"
+echo -e   "  \e[$number (•7)\e[m \e[$below CHANGE PORT\e[m                 \e[$number (14)\e[m \e[$below TRAFFIC XRAY\e[m"
 echo -e   " \e[$line════════════════════════════════════════════════════════════\e[m"
 echo -e   "  \e[$below Premium Script Mod by NiLphreakz"
 echo -e   "  \e[$below Thank you for using script by NiLphreakz"
@@ -154,7 +154,7 @@ vnstat -d
 vnstat -m
 ;;
 14)
-htop
+xray-usage.sh
 ;;
 x)
 clear
