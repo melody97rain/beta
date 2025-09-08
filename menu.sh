@@ -154,7 +154,7 @@ vnstat -d
 vnstat -m
 ;;
 14)
-xray-usage.sh
+clear;xray-usage
 ;;
 x)
 clear
