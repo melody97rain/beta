@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# cek-all
-# Dropbear (on top) + OpenSSH logins + OpenVPN client lists
 # Run with root (sudo) so journalctl/ss/lsof can access necessary info.
 
 set -euo pipefail
@@ -13,9 +11,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ---------------------------
-# DROPBEAR SECTION (ON TOP) with IP:PORT
-# ---------------------------
 SEED_SINCE="${1:-7 days ago}"
 
 # sed to extract PID USER IP PORT from "Password auth succeeded" lines (IPv4)
@@ -71,7 +66,7 @@ normalize_addr() {
 pids="$(ps -o pid= -C dropbear 2>/dev/null || true)"
 echo
 echo "-----=[ Dropbear User Login ]=------"
-echo "ID  |  Username  |  IP:Port"
+echo "ID  |  Username  |  IP Address"
 echo "------------------------------------"
 
 if [ -z "$pids" ]; then
