@@ -205,7 +205,5 @@ if [ -f "/etc/openvpn/server/openvpn-udp.log" ]; then
   grep -w "^CLIENT_LIST" /etc/openvpn/server/openvpn-udp.log 2>/dev/null | cut -d ',' -f 2,3,8 | sed -e 's/,/      /g' || true
 fi
 
-echo "------------------------------------"
-
 # done
 exit 0
