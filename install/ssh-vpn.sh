@@ -270,6 +270,34 @@ convert_unit() {
     fi
 }
 
+# Cari expired untuk user vless dan vmess
+find_expired_for_user() {
+    local user="$1"
+    local config="$2"
+    local expired=""
+    for f in "$config" /usr/local/etc/xray/config.json /usr/local/etc/xray/none.json; do
+        [ -n "$f" ] || continue
+        [ -f "$f" ] || continue
+        expired=$(grep -E "^#vms[[:space:]]+$user[[:space:]]+" "$f" 2>/dev/null | awk '{print $3}' | tail -n1 || true)
+        [ -n "$expired" ] && { printf '%s' "$expired"; return 0; }
+        expired=$(grep -E "^#vls[[:space:]]+$user[[:space:]]+" "$f" 2>/dev/null | awk '{print $3}' | tail -n1 || true)
+        [ -n "$expired" ] && { printf '%s' "$expired"; return 0; }
+    done
+    printf ''
+    return 1
+}
+
+# get stat value helper (safe even if xray/jq missing)
+get_stat_value() {
+    local server="$1"; shift
+    local pattern="$*"
+    if command -v xray >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+        xray api statsquery --server="$server" -pattern "$pattern" 2>/dev/null | jq -r '.stat[0].value // 0' 2>/dev/null || echo 0
+    else
+        echo 0
+    fi
+}
+
 # === TOTAL USAGE ===
 show_usage_total() {
     local CONFIG_LIST=("${!1}")
@@ -314,7 +342,8 @@ show_usage_total() {
             echo "$email:$saved_total:$saved_uplink:$saved_downlink" >> "$DB.tmp"
             mv "$DB.tmp" "$DB"
 
-            expired=$(grep -E "### $email " "$config" | awk '{print $3}')
+             expired=$(find_expired_for_user "$email" "$config" || true)
+			 
             echo "$saved_total|$saved_uplink|$saved_downlink|$email|$expired" >> "$tmpfile"
         done
 
@@ -392,7 +421,8 @@ show_usage_daily() {
             echo "$email:$saved_total:$saved_uplink:$saved_downlink:$DATE" >> "$DB.tmp"
             mv "$DB.tmp" "$DB"
 
-            expired=$(grep -E "### $email " "$config" | awk '{print $3}')
+             expired=$(find_expired_for_user "$email" "$config" || true)
+			 
             echo "$saved_total|$saved_uplink|$saved_downlink|$email|$expired" >> "$tmpfile"
         done
 
