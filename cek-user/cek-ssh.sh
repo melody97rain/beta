@@ -14,9 +14,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ---------------------------
-# DROPBEAR SECTION (ON TOP) with IP:PORT
-# ---------------------------
 SEED_SINCE="${1:-7 days ago}"
 
 # sed to extract PID USER IP PORT from "Password auth succeeded" lines (IPv4)
