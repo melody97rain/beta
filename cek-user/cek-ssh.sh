@@ -143,7 +143,7 @@ else
   done
 
   if [ "$printed" -eq 0 ]; then
-    echo "(no non-root Dropbear sessions with known user & IP detected)"
+    echo "(no user login detected)"
   fi
 fi
 
