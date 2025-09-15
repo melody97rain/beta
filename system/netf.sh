@@ -18,6 +18,13 @@ echo -e "  \033[1;37mTime    : $(date)\033[0m"
 
 export LANG="en_US.UTF-8";
 export LANGUAGE="en_US.UTF-8";
+if ! locale -a | grep -iq 'en_US\.utf-8\|en_US\.UTF-8'; then
+  export LC_ALL=C
+  export LANG=C
+else
+  export LC_ALL=en_US.UTF-8
+  export LANG=en_US.UTF-8
+fi
 export LC_ALL="en_US.UTF-8";
 
 function InstallJQ() {
