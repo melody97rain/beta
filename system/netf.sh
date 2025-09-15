@@ -1,4 +1,8 @@
 #!/bin/bash
+if ! locale -a 2>/dev/null | grep -iq '^en_US\.utf-8$'; then
+  export LC_ALL=C
+  export LANG=C
+fi
 #Script Updater By NiLphreakz
 Font_Black="\033[30m";
 Font_Red="\033[31m";
@@ -18,13 +22,6 @@ echo -e "  \033[1;37mTime    : $(date)\033[0m"
 
 export LANG="en_US.UTF-8";
 export LANGUAGE="en_US.UTF-8";
-if ! locale -a | grep -iq 'en_US\.utf-8\|en_US\.UTF-8'; then
-  export LC_ALL=C
-  export LANG=C
-else
-  export LC_ALL=en_US.UTF-8
-  export LANG=en_US.UTF-8
-fi
 export LC_ALL="en_US.UTF-8";
 
 function InstallJQ() {
