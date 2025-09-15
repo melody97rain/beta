@@ -1,8 +1,4 @@
 #!/bin/bash
-if ! locale -a 2>/dev/null | grep -iq '^en_US\.utf-8$'; then
-  export LC_ALL=C
-  export LANG=C
-fi
 #Script Updater By NiLphreakz
 Font_Black="\033[30m";
 Font_Red="\033[31m";
