@@ -1115,44 +1115,100 @@ echo -e "Created   : $harini"
 echo -e "Expired   : $exp"
 echo -e "Script By $creditt"
 }
-# USER LOGIN VLESS WS
+# USER LOGIN VLESS WS — only IPv4, ignore tcp/IPv6
 function menu12 () {
-clear
-echo -n > /tmp/other.txt
-data=( `cat /usr/local/etc/xray/config.json | grep '^#vls' | cut -d ' ' -f 2 | sort | uniq`);
-echo "-----------------------------------------";
-echo "-----=[ Xray Vless Ws User Login ]=-----";
-echo "-----------------------------------------";
-for akun in "${data[@]}"
-do
-if [[ -z "$akun" ]]; then
-akun="tidakada"
-fi
-echo -n > /tmp/ipvless.txt
-data2=( `cat /var/log/xray/access.log | tail -n 500 | cut -d " " -f 3 | sed 's/tcp://g' | cut -d ":" -f 1 | sort | uniq`);
-for ip in "${data2[@]}"
-do
-jum=$(cat /var/log/xray/access.log | grep -w "$akun" | tail -n 500 | cut -d " " -f 3 | sed 's/tcp://g' | cut -d ":" -f 1 | grep -w "$ip" | sort | uniq)
-if [[ "$jum" = "$ip" ]]; then
-echo "$jum" >> /tmp/ipvless.txt
-else
-echo "$ip" >> /tmp/other.txt
-fi
-jum2=$(cat /tmp/ipvless.txt)
-sed -i "/$jum2/d" /tmp/other.txt > /dev/null 2>&1
-done
-jum=$(cat /tmp/ipvless.txt)
-if [[ -z "$jum" ]]; then
-echo > /dev/null
-else
-jum2=$(cat /tmp/ipvless.txt | nl)
-echo "user : $akun";
-echo "$jum2";
-echo ""
-echo "-------------------------------"
-fi
-rm -rf /tmp/ipvmess.txt
-done
+    clear
+    : > /tmp/other.txt
+
+    # ambil senarai pengguna dari config (baris bermula dengan "#vls", field ke-2)
+    mapfile -t users < <(awk '/^#vls/ {print $2}' /usr/local/etc/xray/config.json 2>/dev/null | sort -u)
+
+    echo "-----------------------------------------"
+    echo "-----=[ Xray Vless Ws User Login ]=-----"
+    echo "-----------------------------------------"
+
+    LOGFILE="/var/log/xray/access.log"
+    if [ ! -f "$LOGFILE" ]; then
+        echo "Log file $LOGFILE tidak ditemui."
+        return 1
+    fi
+
+    # ambil 500 baris terakhir
+    tail -n 500 "$LOGFILE" > /tmp/xray_recent.log
+
+    # fungsi bantu: ekstrak IPv4 sahaja dari field ke-3 (return empty kalau tiada)
+    extract_ipv4_from_field() {
+        local raw="$1"
+        # buang prefix tcp:// jika ada
+        raw="${raw#tcp://}"
+        # cari sebarang pattern IPv4
+        local candidate
+        candidate=$(printf '%s' "$raw" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1 || true)
+        if [ -z "$candidate" ]; then
+            printf ''
+            return
+        fi
+        # validate oktet 0-255
+        IFS='.' read -r a b c d <<< "$candidate"
+        for oct in "$a" "$b" "$c" "$d"; do
+            # ensure numeric and 0-255
+            if ! [[ "$oct" =~ ^[0-9]+$ ]]; then
+                printf ''
+                return
+            fi
+            if [ "$oct" -lt 0 ] 2>/dev/null || [ "$oct" -gt 255 ] 2>/dev/null; then
+                printf ''
+                return
+            fi
+        done
+        printf '%s' "$candidate"
+    }
+
+    # bina senarai semua IPv4 unik dari log (bersih)
+    : > /tmp/allips.txt
+    while IFS= read -r line; do
+        # ambil field ke-3 (format log anda mungkin berbeza; ubah angka jika perlu)
+        field3=$(awk '{print $3}' <<< "$line")
+        ip=$(extract_ipv4_from_field "$field3")
+        [ -n "$ip" ] && printf '%s\n' "$ip"
+    done < /tmp/xray_recent.log | sort -u > /tmp/allips.txt
+
+    # process setiap user
+    for akun in "${users[@]}"; do
+        [ -z "$akun" ] && continue
+
+        # cari baris yang mengandungi username (fixed-string) lalu ekstrak IPv4
+        : > /tmp/userips.txt
+        grep -F -- "$akun" /tmp/xray_recent.log 2>/dev/null | while IFS= read -r uline; do
+            field3=$(awk '{print $3}' <<< "$uline")
+            ip=$(extract_ipv4_from_field "$field3")
+            [ -n "$ip" ] && printf '%s\n' "$ip"
+        done | sort -u > /tmp/userips.txt
+
+        if [ -s /tmp/userips.txt ]; then
+            echo "user : $akun"
+            nl -w2 -s'. ' /tmp/userips.txt
+            echo ""
+            echo "-------------------------------"
+            # keluarkan IP yang sudah dipaparkan daripada allips
+            if [ -s /tmp/allips.txt ]; then
+                grep -F -v -f /tmp/userips.txt /tmp/allips.txt > /tmp/allips.tmp 2>/dev/null || true
+                mv /tmp/allips.tmp /tmp/allips.txt 2>/dev/null || true
+            fi
+        fi
+    done
+
+    # baki allips => other (jika mahu simpan)
+    if [ -s /tmp/allips.txt ]; then
+        cp /tmp/allips.txt /tmp/other.txt
+    else
+        : > /tmp/other.txt
+    fi
+
+    # cleanup temp
+    rm -f /tmp/xray_recent.log /tmp/allips.txt /tmp/userips.txt /tmp/allips.tmp 2>/dev/null
+
+    return 0
 }
 # CREATE USER VLESS XTLS
 function menu13 () {
