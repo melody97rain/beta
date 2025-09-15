@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# cek-all
-# Dropbear (on top) + OpenSSH logins + OpenVPN client lists + Summary per user
 # Run with root (sudo) so journalctl/ss/lsof can access necessary info.
 
 set -euo pipefail
@@ -217,8 +215,19 @@ echo
 echo "-----=[ Total Login Setiap User ]=-----"
 if [ -s "$USERS_TMP" ]; then
   # normalize: some openvpn lines include spaces; extract only the username field for those lines
-  # We'll create a cleaned username list: for lines containing spaces (OpenVPN printed lines) cut first token
-  awk '{print $1}' "$USERS_TMP" | sort | uniq -c | sort -rn | awk '{printf "%-20s %d\n", $2, $1}'
+  CLEAN_TMP="$(mktemp /tmp/cek-all-clean-XXXXXX)"
+  awk '{print $1}' "$USERS_TMP" > "$CLEAN_TMP" || true
+
+  # per-user breakdown
+  awk '{print $1}' "$CLEAN_TMP" | sort | uniq -c | sort -rn | awk '{printf "%-20s %d\n", $2, $1}'
+  
+    # total sessions (each appended line equals one session entry)
+  total_sessions=$(wc -l < "$CLEAN_TMP" 2>/dev/null || echo 0)
+
+  echo ""
+  echo "Total Online Users: $total_sessions"
+
+  rm -f "$CLEAN_TMP"
 else
   echo "(no logins detected)"
 fi
