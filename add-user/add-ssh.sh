@@ -12,16 +12,37 @@ clear
 echo -e   "  \e[$line═══════════════════════════════════════════════════════\e[m"
 echo -e   "  \e[$back_text             \e[30m[\e[$box CREATE USER SSH & OPENVPN\e[30m ]\e[1m             \e[m"
 echo -e   "  \e[$line═══════════════════════════════════════════════════════\e[m"
-read -p "   Username : " Login
+
+# read username and ensure it's unique (loop until a non-existing username is provided)
+while true; do
+  read -p "   Username : " Login
+  # basic sanity: non-empty
+  if [ -z "$Login" ]; then
+    echo "   Nama pengguna kosong. Sila cuba lagi."
+    continue
+  fi
+  # check if user exists
+  if id -u "$Login" >/dev/null 2>&1; then
+    echo "   Username '$Login' sudah wujud. Sila masukkan username lain."
+    continue
+  fi
+  # optional: validate username characters (only allow alnum, dot, underscore, dash)
+  if ! [[ "$Login" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+    echo "   Username mengandungi aksara tidak dibenarkan. Benarkan: A-Z a-z 0-9 . _ -"
+    continue
+  fi
+  break
+done
+
 read -p "   Password : " Pass
 read -p "   Expired (days): " masaaktif
 
 IP=$(wget -qO- icanhazip.com);
 source /var/lib/premium-script/ipvps.conf
 if [[ "$IP" = "" ]]; then
-domain=$(cat /usr/local/etc/xray/domain)
+  domain=$(cat /usr/local/etc/xray/domain)
 else
-domain=$IP
+  domain=$IP
 fi
 ssl="$(cat ~/log-install.txt | grep -w "Stunnel4" | cut -d: -f2)"
 sqd="$(cat ~/log-install.txt | grep -w "Squid" | cut -d: -f2)"
