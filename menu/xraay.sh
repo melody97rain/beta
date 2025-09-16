@@ -1115,17 +1115,24 @@ echo -e "Created   : $harini"
 echo -e "Expired   : $exp"
 echo -e "Script By $creditt"
 }
-# USER LOGIN VLESS WS — only IPv4, ignore tcp/IPv6
-function menu12 () {
+# MENU12: cepat periksa user login (only IPv4) — portable awk (no {n} or +)
+menu12() {
     clear
-    : > /tmp/other.txt
+
+    # temp files (unik)
+    tmp_users="$(mktemp /tmp/xray_users.XXXXXX)"
+    tmp_log="$(mktemp /tmp/xray_recent.XXXXXX)"
+    tmp_pairs="$(mktemp /tmp_xray_pairs.XXXXXX)"
+    tmp_allips="$(mktemp /tmp_xray_allips.XXXXXX)"
+    trap 'rm -f "$tmp_users" "$tmp_log" "$tmp_pairs" "$tmp_allips"' EXIT INT TERM
 
     # ambil senarai pengguna dari config (baris bermula dengan "#vls", field ke-2)
-    mapfile -t users < <(awk '/^#vls/ {print $2}' /usr/local/etc/xray/config.json 2>/dev/null | sort -u)
-
-    echo "-----------------------------------------"
-    echo "-----=[ Xray Vless Ws User Login ]=-----"
-    echo "-----------------------------------------"
+    if [ -r /usr/local/etc/xray/config.json ]; then
+        awk '/^#vls/ {print $2}' /usr/local/etc/xray/config.json 2>/dev/null | sort -u > "$tmp_users"
+    else
+        echo "Config not found: /usr/local/etc/xray/config.json"
+        return 1
+    fi
 
     LOGFILE="/var/log/xray/access.log"
     if [ ! -f "$LOGFILE" ]; then
@@ -1134,79 +1141,90 @@ function menu12 () {
     fi
 
     # ambil 500 baris terakhir
-    tail -n 500 "$LOGFILE" > /tmp/xray_recent.log
+    tail -n 500 "$LOGFILE" > "$tmp_log"
 
-    # fungsi bantu: ekstrak IPv4 sahaja dari field ke-3 (return empty kalau tiada)
-    extract_ipv4_from_field() {
-        local raw="$1"
-        # buang prefix tcp:// jika ada
-        raw="${raw#tcp://}"
-        # cari sebarang pattern IPv4
-        local candidate
-        candidate=$(printf '%s' "$raw" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1 || true)
-        if [ -z "$candidate" ]; then
-            printf ''
-            return
-        fi
-        # validate oktet 0-255
-        IFS='.' read -r a b c d <<< "$candidate"
-        for oct in "$a" "$b" "$c" "$d"; do
-            # ensure numeric and 0-255
-            if ! [[ "$oct" =~ ^[0-9]+$ ]]; then
-                printf ''
-                return
-            fi
-            if [ "$oct" -lt 0 ] 2>/dev/null || [ "$oct" -gt 255 ] 2>/dev/null; then
-                printf ''
-                return
-            fi
-        done
-        printf '%s' "$candidate"
+    # awk: scan log sekali. Cari IPv4 (portable pattern) pada field 3, validasi oktet,
+    # dan jika baris mengandungi username (substring), print "user<TAB>ip".
+    awk -v usersfile="$tmp_users" '
+    BEGIN{
+        # load users into array users_list[]
+        n=0
+        while ((getline u < usersfile) > 0) {
+            if (u != "") { n++; users_list[n]=u }
+        }
+        close(usersfile)
     }
+    {
+        raw = $3
+        sub(/^tcp:\/\//, "", raw)
+        # portable IPv4 pattern: four groups of digits separated by dots
+        if (match(raw, /[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/)) {
+            ip = substr(raw, RSTART, RLENGTH)
+            # split and validate octets 0-255
+            split(ip, o, ".")
+            ok = 1
+            if (length(o) != 4) ok = 0
+            for (i=1; i<=4 && ok; i++) {
+                if (o[i] !~ /^[0-9]+$/) { ok = 0; break }
+                # numeric compare: add 0 to force numeric context
+                if ((o[i]+0) < 0 || (o[i]+0) > 255) { ok = 0; break }
+            }
+            if (ok) {
+                # for each user check substring presence
+                for (i=1; i<=n; i++) {
+                    u = users_list[i]
+                    if (index($0, u) > 0) {
+                        print u "\t" ip
+                    }
+                }
+            }
+        }
+    }
+    ' "$tmp_log" > "$tmp_pairs"
 
-    # bina senarai semua IPv4 unik dari log (bersih)
-    : > /tmp/allips.txt
-    while IFS= read -r line; do
-        # ambil field ke-3 (format log anda mungkin berbeza; ubah angka jika perlu)
-        field3=$(awk '{print $3}' <<< "$line")
-        ip=$(extract_ipv4_from_field "$field3")
-        [ -n "$ip" ] && printf '%s\n' "$ip"
-    done < /tmp/xray_recent.log | sort -u > /tmp/allips.txt
+    # deduplicate pairs
+    sort -u "$tmp_pairs" -o "$tmp_pairs"
 
-    # process setiap user
-    for akun in "${users[@]}"; do
-        [ -z "$akun" ] && continue
-
-        # cari baris yang mengandungi username (fixed-string) lalu ekstrak IPv4
-        : > /tmp/userips.txt
-        grep -F -- "$akun" /tmp/xray_recent.log 2>/dev/null | while IFS= read -r uline; do
-            field3=$(awk '{print $3}' <<< "$uline")
-            ip=$(extract_ipv4_from_field "$field3")
-            [ -n "$ip" ] && printf '%s\n' "$ip"
-        done | sort -u > /tmp/userips.txt
-
-        if [ -s /tmp/userips.txt ]; then
-            echo "user : $akun"
-            nl -w2 -s'. ' /tmp/userips.txt
+    # print per-user lists
+    while IFS= read -r user; do
+        [ -z "$user" ] && continue
+        if grep -F -q -- "$user"$'\t' "$tmp_pairs"; then
+            echo "user : $user"
+            grep -F -- "$user"$'\t' "$tmp_pairs" | cut -f2 | sort -u | nl -w2 -s'. '
             echo ""
             echo "-------------------------------"
-            # keluarkan IP yang sudah dipaparkan daripada allips
-            if [ -s /tmp/allips.txt ]; then
-                grep -F -v -f /tmp/userips.txt /tmp/allips.txt > /tmp/allips.tmp 2>/dev/null || true
-                mv /tmp/allips.tmp /tmp/allips.txt 2>/dev/null || true
-            fi
         fi
-    done
+    done < "$tmp_users"
 
-    # baki allips => other (jika mahu simpan)
-    if [ -s /tmp/allips.txt ]; then
-        cp /tmp/allips.txt /tmp/other.txt
+    # build list of all IPv4 seen (separate pass, portable)
+    awk '{
+        raw=$3
+        sub(/^tcp:\/\//, "", raw)
+        if (match(raw, /[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/)) {
+            ip = substr(raw, RSTART, RLENGTH)
+            split(ip, o, ".")
+            ok = 1
+            if (length(o) != 4) ok = 0
+            for (i=1;i<=4 && ok;i++){
+                if (o[i] !~ /^[0-9]+$/) ok=0
+                if ((o[i]+0) < 0 || (o[i]+0) > 255) ok=0
+            }
+            if (ok) print ip
+        }
+    }' "$tmp_log" | sort -u > "$tmp_allips"
+
+    # subtract matched ips => other list
+    if [ -s "$tmp_pairs" ]; then
+        awk -F"\t" '{print $2}' "$tmp_pairs" | sort -u > "${tmp_pairs}.ips"
+        comm -23 "$tmp_allips" "${tmp_pairs}.ips" > /tmp/other.txt 2>/dev/null || true
+        rm -f "${tmp_pairs}.ips"
     else
-        : > /tmp/other.txt
+        cp -f "$tmp_allips" /tmp/other.txt 2>/dev/null || true
     fi
 
-    # cleanup temp
-    rm -f /tmp/xray_recent.log /tmp/allips.txt /tmp/userips.txt /tmp/allips.tmp 2>/dev/null
+    # selesai — tunggu input sebelum kembali
+    echo
+    read -r -p "Press Enter to return..." _
 
     return 0
 }
