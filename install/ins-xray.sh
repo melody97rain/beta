@@ -62,7 +62,7 @@ cat> /usr/local/etc/xray/config.json << END
     "error": "/var/log/xray/error.log",
     "loglevel": "info"
        },
-   "inbounds": [
+    "inbounds": [
         {
             "port": 443,
             "protocol": "vless",
@@ -259,7 +259,7 @@ cat> /usr/local/etc/xray/none.json << END
     "error": "/var/log/xray/error.log",
     "loglevel": "info"
   },
-     "inbounds": [
+  "inbounds": [
     {
             "port": 8443,
             "protocol": "vmess",
@@ -471,11 +471,11 @@ systemctl restart xray@none
 
 # download script
 cd /usr/bin
-wget -O port-xray "https://raw.githubusercontent.com/melody97rain/beta/main/change-port/port-xray.sh"
-wget -O port-trojan "https://raw.githubusercontent.com/melody97rain/beta/main/change-port/port-trojan.sh"
-wget -O certv2ray "https://raw.githubusercontent.com/melody97rain/beta/main/cert.sh"
-wget -O trojaan "https://raw.githubusercontent.com/melody97rain/beta/main/menu/trojaan.sh"
-wget -O xraay "https://raw.githubusercontent.com/melody97rain/beta/main/menu/xraay.sh"
+wget -O port-xray "https://raw.githubusercontent.com/melody97rain/syntaxerror/main/change-port/port-xray.sh"
+wget -O port-trojan "https://raw.githubusercontent.com/melody97rain/syntaxerror/main/change-port/port-trojan.sh"
+wget -O certv2ray "https://raw.githubusercontent.com/melody97rain/syntaxerror/main/cert.sh"
+wget -O trojaan "https://raw.githubusercontent.com/melody97rain/syntaxerror/main/menu/trojaan.sh"
+wget -O xraay "https://raw.githubusercontent.com/melody97rain/syntaxerror/main/menu/xraay.sh"
 chmod +x port-xray
 chmod +x port-trojan
 chmod +x certv2ray
