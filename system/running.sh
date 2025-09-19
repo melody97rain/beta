@@ -196,7 +196,7 @@ echo -e " DropBear                : "$green"running"$NC" ✓"
 else
 echo -e " DropBear                : "$red"not running (Error)"$NC" "
 fi
-status="$(systemctl show cdn-dropbear.service --no-page)"
+status="$(systemctl show cdn-openssh.service --no-page)"
 status_text=$(echo "${status}" | grep 'ActiveState=' | cut -f2 -d=)
 if [ "${status_text}" == "active" ]
 then
