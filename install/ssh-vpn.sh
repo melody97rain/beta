@@ -156,9 +156,9 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOF
 
-# enable & restart dropbear
-systemctl enable dropbear
-systemctl restart dropbear
+#enable & restart dropbear
+#systemctl enable dropbear
+#systemctl restart dropbear
 
 # install squid for debian & ubuntu
 apt -y install squid3
@@ -190,10 +190,20 @@ cat > /etc/stunnel/stunnel.conf <<-END
 pid = /var/run/stunnel4.pid
 cert = /etc/stunnel/stunnel.pem
 
-[dropbear]
+[openssh]
 accept = 737
-connect = 127.0.0.1:143
+connect = 127.0.0.1:22
 END
+
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+bash -c 'cat >> /etc/ssh/sshd_config <<EOF
+
+# More compatible set (covers modern + some older clients)
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1
+HostKeyAlgorithms ssh-ed25519,ssh-rsa
+Ciphers chacha20-poly1305@openssh.com,aes256-ctr,aes128-ctr
+MACs hmac-sha2-256,hmac-sha2-512
+EOF'
 
 # make a certificate
 openssl genrsa -out key.pem 2048
