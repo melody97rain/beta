@@ -127,8 +127,7 @@ apt install -y dropbear
 # tulis ulang konfigurasi dropbear
 cat > /etc/default/dropbear <<'EOF'
 NO_START=0
-DROPBEAR_PORT=442
-DROPBEAR_EXTRA_ARGS="-p 109 -p 22"
+DROPBEAR_PORT=143
 DROPBEAR_BANNER=""
 EOF
 
@@ -144,11 +143,11 @@ Documentation=man:dropbear(8)
 After=network.target
 
 [Service]
-Environment=DROPBEAR_PORT=22 DROPBEAR_RECEIVE_WINDOW=65536
+Environment=DROPBEAR_PORT=143 DROPBEAR_RECEIVE_WINDOW=65536
 EnvironmentFile=-/etc/default/dropbear
 
 # Clear previous ExecStart and set new one that includes banner
-ExecStart=/usr/sbin/dropbear -EF -p "$DROPBEAR_PORT" -W "$DROPBEAR_RECEIVE_WINDOW" -b "$DROPBEAR_BANNER" $DROPBEAR_EXTRA_ARGS
+ExecStart=/usr/sbin/dropbear -EF -p "$DROPBEAR_PORT" -W "$DROPBEAR_RECEIVE_WINDOW" -b "$DROPBEAR_BANNER"
 
 KillMode=process
 Restart=on-failure
@@ -193,7 +192,7 @@ cert = /etc/stunnel/stunnel.pem
 
 [dropbear]
 accept = 737
-connect = 127.0.0.1:22
+connect = 127.0.0.1:143
 END
 
 # make a certificate
