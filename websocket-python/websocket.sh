@@ -17,9 +17,9 @@ wget -O /etc/systemd/system/cdn-ssl.service https://raw.githubusercontent.com/me
 #System Websocket-Ovpn Service
 cd /etc/systemd/system/
 wget -O /etc/systemd/system/cdn-ovpn.service https://raw.githubusercontent.com/melody97rain/beta/main/${namafolder}/cdn-ovpn.service
-#System Websocket-Dropbear Service
+#System Websocket-Openssh Service
 cd /etc/systemd/system/
-wget -O /etc/systemd/system/cdn-dropbear.service https://raw.githubusercontent.com/melody97rain/beta/main/${namafolder}/cdn-dropbear.service
+wget -O /etc/systemd/system/cdn-openssh.service https://raw.githubusercontent.com/melody97rain/beta/main/${namafolder}/cdn-openssh.service
 
 #Install WS-SSL
 wget -q -O /usr/local/bin/cdn-ssl https://raw.githubusercontent.com/melody97rain/beta/main/${namafolder}/cdn-ssl.py
@@ -27,9 +27,9 @@ chmod +x /usr/local/bin/cdn-ssl
 #Install WS-OpenVPN
 wget -q -O /usr/local/bin/cdn-ovpn https://raw.githubusercontent.com/melody97rain/beta/main/${namafolder}/cdn-ovpn.py
 chmod +x /usr/local/bin/cdn-ovpn
-#Install WS-Dropbear
-wget -q -O /usr/local/bin/cdn-dropbear https://raw.githubusercontent.com/melody97rain/beta/main/${namafolder}/cdn-dropbear.py
-chmod +x /usr/local/bin/cdn-dropbear
+#Install WS-Openssh
+wget -q -O /usr/local/bin/cdn-openssh https://raw.githubusercontent.com/melody97rain/beta/main/${namafolder}/cdn-openssh.py
+chmod +x /usr/local/bin/cdn-openssh
 
 #Enable & Start & Restart ws-stunnel service
 systemctl daemon-reload
@@ -43,8 +43,8 @@ systemctl enable cdn-ovpn
 systemctl start cdn-ovpn
 systemctl restart cdn-ovpn
 
-#Enable & Start & Restart ws-dropbear service
+#Enable & Start & Restart ws-openssh service
 systemctl daemon-reload
-systemctl enable cdn-dropbear
-systemctl start cdn-dropbear
-systemctl restart cdn-dropbear
+systemctl enable cdn-openssh
+systemctl start cdn-openssh
+systemctl restart cdn-openssh
