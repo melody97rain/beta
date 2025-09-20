@@ -48,11 +48,10 @@ until [[ $user =~ ^[a-zA-Z0-9_]+$ && ${CLIENT_EXISTS} == '0' ]]; do
 		fi
 	done
 patchtls=/vmesstls
-patchnontls=/vmessnontls
+patchnontls=/vmessntls
 uuid=$(cat /proc/sys/kernel/random/uuid)
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
-read -p "   Input custom UUID (press Enter for random): " uuid_input
 read -p "   Expired (days) : " masaaktif
 bug_addr=${address}.
 bug_addr2=$address
@@ -61,36 +60,6 @@ sts=$bug_addr2
 else
 sts=$bug_addr
 fi
-# normalize/validate function
-normalize_uuid() {
-  local u="$1"
-  # buang braces / quotes / spaces
-  u="${u//[\{\}\"]/}"
-  u="${u// /}"
-  # 32 hex tanpa dash -> tambah dash
-  if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
-    echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  # sudah berbentuk dashed uuid
-  if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
-    echo "$u" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  return 1
-}
-
-if [[ -z "$uuid_input" ]]; then
-  uuid="$(cat /proc/sys/kernel/random/uuid)"
-else
-  if normalized="$(normalize_uuid "$uuid_input")"; then
-    uuid="$normalized"
-  else
-    echo "UUID yang anda masukkan tidak sah. Akan generate automatik." >&2
-    uuid="$(cat /proc/sys/kernel/random/uuid)"
-  fi
-fi
-
 exp=`date -d "$masaaktif days" +"%Y-%m-%d"`
 harini=`date -d "0 days" +"%Y-%m-%d"`
 sed -i '/#xray-vmess-tls$/a\#vms '"$user $exp $harini $uuid"'\
@@ -278,7 +247,7 @@ exp=$(date -d "$masaaktif days" +"%Y-%m-%d")
 user=Trial`</dev/urandom tr -dc X-Z0-9 | head -c4`
 
 patchtls=/vmesstls
-patchnontls=/vmessnontls
+patchnontls=/vmessntls
 uuid=$(cat /proc/sys/kernel/random/uuid)
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
@@ -576,7 +545,7 @@ NUMBER_OF_CLIENTS=$(grep -c -E "^#vms " "/usr/local/etc/xray/config.json")
 		fi
 	done
 patchtls=/vmesstls
-patchnontls=/vmessnontls
+patchnontls=/vmessntls
 user=$(grep -E "^#vms " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2 | sed -n "${CLIENT_NUMBER}"p)
 harini=$(grep -E "^#vms " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 4 | sed -n "${CLIENT_NUMBER}"p)
 exp=$(grep -E "^#vms " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 3 | sed -n "${CLIENT_NUMBER}"p)
@@ -801,11 +770,10 @@ until [[ $user =~ ^[a-zA-Z0-9_]+$ && ${CLIENT_EXISTS} == '0' ]]; do
 		fi
 	done
 patchtls=/vlesstls
-patchnontls=/vlessnontls
+patchnontls=/vlessntls
 uuid=$(cat /proc/sys/kernel/random/uuid)
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
-read -p "   Input custom UUID (Press Enter For Random UUID): " uuid_input
 read -p "   Expired (days) : " masaaktif
 bug_addr=${address}.
 bug_addr2=$address
@@ -814,36 +782,6 @@ sts=$bug_addr2
 else
 sts=$bug_addr
 fi
-# normalize/validate function
-normalize_uuid() {
-  local u="$1"
-  # buang braces / quotes / spaces
-  u="${u//[\{\}\"]/}"
-  u="${u// /}"
-  # 32 hex tanpa dash -> tambah dash
-  if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
-    echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  # sudah berbentuk dashed uuid
-  if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
-    echo "$u" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  return 1
-}
-
-if [[ -z "$uuid_input" ]]; then
-  uuid="$(cat /proc/sys/kernel/random/uuid)"
-else
-  if normalized="$(normalize_uuid "$uuid_input")"; then
-    uuid="$normalized"
-  else
-    echo "UUID yang anda masukkan tidak sah. Akan generate automatik." >&2
-    uuid="$(cat /proc/sys/kernel/random/uuid)"
-  fi
-fi
-
 exp=`date -d "$masaaktif days" +"%Y-%m-%d"`
 harini=`date -d "0 days" +"%Y-%m-%d"`
 sed -i '/#xray-vless-tls$/a\#vls '"$user $exp $harini $uuid"'\
@@ -905,7 +843,7 @@ exp=$(date -d "$masaaktif days" +"%Y-%m-%d")
 user=Trial`</dev/urandom tr -dc X-Z0-9 | head -c4`
 
 patchtls=/vlesstls
-patchnontls=/vlessnontls
+patchnontls=/vlessntls
 uuid=$(cat /proc/sys/kernel/random/uuid)
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
@@ -1073,7 +1011,7 @@ NUMBER_OF_CLIENTS=$(grep -c -E "^#vls " "/usr/local/etc/xray/config.json")
 		fi
 	done
 patchtls=/vlesstls
-patchnontls=/vlessnontls
+patchnontls=/vlessntls
 user=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2 | sed -n "${CLIENT_NUMBER}"p)
 harini=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 4 | sed -n "${CLIENT_NUMBER}"p)
 exp=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 3 | sed -n "${CLIENT_NUMBER}"p)
@@ -1115,118 +1053,44 @@ echo -e "Created   : $harini"
 echo -e "Expired   : $exp"
 echo -e "Script By $creditt"
 }
-# MENU12: cepat periksa user login (only IPv4) — portable awk (no {n} or +)
-menu12() {
-    clear
-
-    # temp files (unik)
-    tmp_users="$(mktemp /tmp/xray_users.XXXXXX)"
-    tmp_log="$(mktemp /tmp/xray_recent.XXXXXX)"
-    tmp_pairs="$(mktemp /tmp_xray_pairs.XXXXXX)"
-    tmp_allips="$(mktemp /tmp_xray_allips.XXXXXX)"
-    trap 'rm -f "$tmp_users" "$tmp_log" "$tmp_pairs" "$tmp_allips"' EXIT INT TERM
-
-    # ambil senarai pengguna dari config (baris bermula dengan "#vls", field ke-2)
-    if [ -r /usr/local/etc/xray/config.json ]; then
-        awk '/^#vls/ {print $2}' /usr/local/etc/xray/config.json 2>/dev/null | sort -u > "$tmp_users"
-    else
-        echo "Config not found: /usr/local/etc/xray/config.json"
-        return 1
-    fi
-
-    LOGFILE="/var/log/xray/access.log"
-    if [ ! -f "$LOGFILE" ]; then
-        echo "Log file $LOGFILE tidak ditemui."
-        return 1
-    fi
-
-    # ambil 500 baris terakhir
-    tail -n 500 "$LOGFILE" > "$tmp_log"
-
-    # awk: scan log sekali. Cari IPv4 (portable pattern) pada field 3, validasi oktet,
-    # dan jika baris mengandungi username (substring), print "user<TAB>ip".
-    awk -v usersfile="$tmp_users" '
-    BEGIN{
-        # load users into array users_list[]
-        n=0
-        while ((getline u < usersfile) > 0) {
-            if (u != "") { n++; users_list[n]=u }
-        }
-        close(usersfile)
-    }
-    {
-        raw = $3
-        sub(/^tcp:\/\//, "", raw)
-        # portable IPv4 pattern: four groups of digits separated by dots
-        if (match(raw, /[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/)) {
-            ip = substr(raw, RSTART, RLENGTH)
-            # split and validate octets 0-255
-            split(ip, o, ".")
-            ok = 1
-            if (length(o) != 4) ok = 0
-            for (i=1; i<=4 && ok; i++) {
-                if (o[i] !~ /^[0-9]+$/) { ok = 0; break }
-                # numeric compare: add 0 to force numeric context
-                if ((o[i]+0) < 0 || (o[i]+0) > 255) { ok = 0; break }
-            }
-            if (ok) {
-                # for each user check substring presence
-                for (i=1; i<=n; i++) {
-                    u = users_list[i]
-                    if (index($0, u) > 0) {
-                        print u "\t" ip
-                    }
-                }
-            }
-        }
-    }
-    ' "$tmp_log" > "$tmp_pairs"
-
-    # deduplicate pairs
-    sort -u "$tmp_pairs" -o "$tmp_pairs"
-
-    # print per-user lists
-    while IFS= read -r user; do
-        [ -z "$user" ] && continue
-        if grep -F -q -- "$user"$'\t' "$tmp_pairs"; then
-            echo "user : $user"
-            grep -F -- "$user"$'\t' "$tmp_pairs" | cut -f2 | sort -u | nl -w2 -s'. '
-            echo ""
-            echo "-------------------------------"
-        fi
-    done < "$tmp_users"
-
-    # build list of all IPv4 seen (separate pass, portable)
-    awk '{
-        raw=$3
-        sub(/^tcp:\/\//, "", raw)
-        if (match(raw, /[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/)) {
-            ip = substr(raw, RSTART, RLENGTH)
-            split(ip, o, ".")
-            ok = 1
-            if (length(o) != 4) ok = 0
-            for (i=1;i<=4 && ok;i++){
-                if (o[i] !~ /^[0-9]+$/) ok=0
-                if ((o[i]+0) < 0 || (o[i]+0) > 255) ok=0
-            }
-            if (ok) print ip
-        }
-    }' "$tmp_log" | sort -u > "$tmp_allips"
-
-    # subtract matched ips => other list
-    if [ -s "$tmp_pairs" ]; then
-        awk -F"\t" '{print $2}' "$tmp_pairs" | sort -u > "${tmp_pairs}.ips"
-        comm -23 "$tmp_allips" "${tmp_pairs}.ips" > /tmp/other.txt 2>/dev/null || true
-        rm -f "${tmp_pairs}.ips"
-    else
-        cp -f "$tmp_allips" /tmp/other.txt 2>/dev/null || true
-    fi
-
-    # selesai — tunggu input sebelum kembali
-    echo
-    read -r -p "Press Enter to return..." _
-
-    return 0
+# USER LOGIN VLESS WS
+function menu12 () {
+clear
+echo -n > /tmp/other.txt
+data=( `cat /usr/local/etc/xray/config.json | grep '^#vls' | cut -d ' ' -f 2 | sort | uniq`);
+echo "-----------------------------------------";
+echo "-----=[ Xray Vless Ws User Login ]=-----";
+echo "-----------------------------------------";
+for akun in "${data[@]}"
+do
+if [[ -z "$akun" ]]; then
+akun="tidakada"
+fi
+echo -n > /tmp/ipvless.txt
+data2=( `cat /var/log/xray/access.log | tail -n 500 | cut -d " " -f 3 | sed 's/tcp://g' | cut -d ":" -f 1 | sort | uniq`);
+for ip in "${data2[@]}"
+do
+jum=$(cat /var/log/xray/access.log | grep -w "$akun" | tail -n 500 | cut -d " " -f 3 | sed 's/tcp://g' | cut -d ":" -f 1 | grep -w "$ip" | sort | uniq)
+if [[ "$jum" = "$ip" ]]; then
+echo "$jum" >> /tmp/ipvless.txt
+else
+echo "$ip" >> /tmp/other.txt
+fi
+jum2=$(cat /tmp/ipvless.txt)
+sed -i "/$jum2/d" /tmp/other.txt > /dev/null 2>&1
+done
+jum=$(cat /tmp/ipvless.txt)
+if [[ -z "$jum" ]]; then
+echo > /dev/null
+else
+jum2=$(cat /tmp/ipvless.txt | nl)
+echo "user : $akun";
+echo "$jum2";
+echo ""
+echo "-------------------------------"
+fi
+rm -rf /tmp/ipvmess.txt
+done
 }
 # CREATE USER VLESS XTLS
 function menu13 () {
@@ -1248,7 +1112,6 @@ until [[ $user =~ ^[a-zA-Z0-9_]+$ && ${CLIENT_EXISTS} == '0' ]]; do
 uuid=$(cat /proc/sys/kernel/random/uuid)
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
-read -p "   Input custom UUID (press Enter for random): " uuid_input
 read -p "   Expired (days) : " masaaktif
 bug_addr=${address}.
 bug_addr2=$address
@@ -1256,46 +1119,6 @@ if [[ $address == "" ]]; then
 sts=$bug_addr2
 else
 sts=$bug_addr
-fi
-# normalize/validate UUID
-normalize_uuid() {
-  local u="$1"
-  u="${u//[\{\}\"]/}"
-  u="${u// /}"
-  if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
-    echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
-    echo "$u" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  return 1
-}
-
-# determine uuid
-if [[ -z "$uuid_input" ]]; then
-  if [[ -r /proc/sys/kernel/random/uuid ]]; then
-    uuid="$(cat /proc/sys/kernel/random/uuid)"
-  else
-    # fallback to openssl if /proc not available
-    if command -v openssl >/dev/null 2>&1; then
-      uuid="$(openssl rand -hex 16 | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')"
-    else
-      echo "Tidak dapat generate UUID (tiada /proc/sys/... dan openssl). Sila masukkan UUID manually." >&2
-      read -p "UUID: " uuid
-    fi
-  fi
-else
-  if normalized="$(normalize_uuid "$uuid_input")"; then
-    uuid="$normalized"
-  else
-    echo "UUID yang anda masukkan tidak sah. Akan generate automatik." >&2
-    uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || true)"
-    if [[ -z "$uuid" ]]; then
-      uuid="$(openssl rand -hex 16 | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')"
-    fi
-  fi
 fi
 exp=`date -d "$masaaktif days" +"%Y-%m-%d"`
 harini=`date -d "0 days" +"%Y-%m-%d"`
