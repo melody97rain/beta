@@ -2,41 +2,85 @@
 # Run with root (sudo) so journalctl/ss/lsof can access necessary info.
 
 set -euo pipefail
+export LANG=en_US.UTF-8
 
-# temp files for OpenSSH parsing + users list
+# temp files
 TMP1="$(mktemp /tmp/cek-ssh-XXXXXX)"
 TMP2="$(mktemp /tmp/cek-ssh-XXXXXX)"
-USERS_TMP="$(mktemp /tmp/cek-all-users-XXXXXX)"
+USERS_DROP_TMP="$(mktemp /tmp/cek-drop-users-XXXXXX)"
+USERS_SSH_TMP="$(mktemp /tmp/cek-ssh-users-XXXXXX)"
+TMP_SS="$(mktemp /tmp/cek-ss-XXXXXX)"
+TMP_JOURNAL="$(mktemp /tmp/cek-journal-XXXXXX)"
+
 cleanup() {
-  rm -f "$TMP1" "$TMP2" "$USERS_TMP"
+  rm -f "$TMP1" "$TMP2" "$USERS_DROP_TMP" "$USERS_SSH_TMP" "$TMP_SS" "$TMP_JOURNAL" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 SEED_SINCE="${1:-7 days ago}"
 
-# sed to extract PID USER IP PORT from "Password auth succeeded" lines (IPv4)
-SED_EXTRACT_PASS='s/.*dropbear\[\([0-9]\+\)\].*Password auth succeeded for '\''\([^'\'']\+\)'\'' from \([0-9.]\+\):\([0-9]\+\).*/\1 \2 \3 \4/p'
-
-declare -A pid_to_user
-declare -A pid_to_ip
-declare -A pid_to_port
-
-# Seed from journal (Password auth succeeded entries)
-if command -v journalctl >/dev/null 2>&1; then
-  while IFS=' ' read -r pid user ip port; do
-    [ -z "$pid" ] && continue
-    [ -n "$user" ] && pid_to_user["$pid"]="$user"
-    [ -n "$ip" ] && pid_to_ip["$pid"]="$ip"
-    [ -n "$port" ] && pid_to_port["$pid"]="$port"
-  done < <(journalctl --no-pager -u dropbear --since "$SEED_SINCE" -o short-iso 2>/dev/null | sed -n "$SED_EXTRACT_PASS" || true)
-fi
-
 # helpers
+seg() { printf '%*s' "$1" '' | tr ' ' '-'; }
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# strip control characters (safe for multibyte)
+sanitize_field() {
+  local s="$1"
+  # remove control characters (C0/C1): awk gsub(/[[:cntrl:]]/,"")
+  awk -v str="$s" 'BEGIN{gsub(/[[:cntrl:]]/,"",str); print str}'
+}
+
+# Character-safe truncate (uses awk length/substr), append ASCII '...' if truncated
+truncate_field() {
+  local s="$1"; local w="$2"
+  if [ "${w:-0}" -le 0 ]; then printf '%s' ""; return; fi
+  # remove control chars first
+  s="$(sanitize_field "$s")"
+  # awk length works with characters in UTF-8 locales
+  local len
+  len=$(awk -v str="$s" 'BEGIN{print length(str)}')
+  if [ "$len" -le "$w" ]; then
+    printf '%s' "$s"
+  else
+    if [ "$w" -le 3 ]; then
+      # if width tiny, just cut without adding dots
+      awk -v str="$s" -v w="$w" 'BEGIN{print substr(str,1,w)}'
+    else
+      local cut=$((w-3))
+      awk -v str="$s" -v c="$cut" 'BEGIN{printf "%s...", substr(str,1,c)}'
+    fi
+  fi
+}
+
+# parse peer like "192.0.2.1:1234" or "[2001:db8::1]:22"
+parse_peer() {
+  local peer="$1"
+  local ip port
+
+  peer="${peer#"${peer%%[![:space:]]*}"}"
+  peer="${peer%"${peer##*[![:space:]]}"}"
+
+  if [[ "$peer" =~ ^\[.+\]:[0-9]+$ ]]; then
+    ip="${peer%%]*}"
+    ip="${ip#\[}"
+    port="${peer##*:}"
+  elif [[ "$peer" == *:* && "$peer" == *.*:* ]]; then
+    ip="${peer%:*}"
+    port="${peer##*:}"
+  elif [[ "$peer" == *:* && "$peer" != *.*:* ]]; then
+    ip="${peer%:*}"
+    port="${peer##*:}"
+  else
+    ip="$peer"
+    port=""
+  fi
+
+  printf '%s %s' "$ip" "$port"
+}
 
 get_addr_from_ss() {
   local pid="$1"
-  ss -tnp 2>/dev/null | awk -v p="pid=$pid," 'index($0,p){print $(NF-1); exit}'
+  ss -tnp 2>/dev/null | awk -v p="pid=$pid," 'index($0,p){ print $(NF-1); exit }'
 }
 
 get_addr_from_lsof() {
@@ -55,22 +99,48 @@ get_addr_from_lsof() {
 
 normalize_addr() {
   local addr="$1"
-  addr="${addr#[}"
-  addr="${addr%]}"
+  addr="${addr#\[}"
+  addr="${addr%\]}"
+  addr="${addr#"${addr%%[![:space:]]*}"}"
+  addr="${addr%"${addr##*[![:space:]]}"}"
   printf '%s' "$addr"
 }
 
-# get list of running dropbear PIDs
+# ---------------------------
+# Dropbear section (pretty table)
+# ---------------------------
 pids="$(ps -o pid= -C dropbear 2>/dev/null || true)"
 echo
 echo "-----=[ Dropbear User Login ]=------"
-echo "ID  |  Username  |  IP Address"
-echo "------------------------------------"
 
-if [ -z "$pids" ]; then
+# Dropbear table widths
+ID_W=6
+USER_W=12
+IP_W=20
+START_W=12
+TOTAL_W=4
+
+printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
+printf '| %-*s | %-*s | %-*s | %-*s | %-*s |\n' "$ID_W" "ID" "$USER_W" "Username" "$IP_W" "IP Address[:port]" "$START_W" "Start" "$TOTAL_W" "Total"
+printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
+
+if [ -z "${pids// /}" ]; then
+  printf '| %-*s | %-*s | %-*s | %-*s | %-*s |\n' $ID_W "(none)" $USER_W "-" $IP_W "-" $START_W "-" $TOTAL_W "-"
+  printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
   echo "(no dropbear process found)"
 else
-  # populate missing info per pid
+  SED_EXTRACT_PASS='s/.*dropbear\[\([0-9]\+\)\].*Password auth succeeded for '\''\([^'\'']\+\)'\'' from \([0-9.]\+\):\([0-9]\+\).*/\1 \2 \3 \4/p'
+  declare -A pid_to_user pid_to_ip pid_to_port pid_to_start_time
+
+  if command -v journalctl >/dev/null 2>&1; then
+    while IFS=' ' read -r pid user ip port; do
+      [ -z "$pid" ] && continue
+      [ -n "$user" ] && pid_to_user["$pid"]="$user"
+      [ -n "$ip" ] && pid_to_ip["$pid"]="$ip"
+      [ -n "$port" ] && pid_to_port["$pid"]="$port"
+    done < <(journalctl --no-pager -u dropbear --since "$SEED_SINCE" -o short-iso 2>/dev/null | sed -n "$SED_EXTRACT_PASS" || true)
+  fi
+
   for pid in $pids; do
     [ -z "$pid" ] && continue
     user="${pid_to_user[$pid]:-}"
@@ -89,26 +159,36 @@ else
       fi
       addr="$(normalize_addr "${addr:-}")"
       if [ -n "$addr" ]; then
-        # split last ':' to ip and port (best-effort; IPv6 handling basic)
-        if echo "$addr" | grep -q ']:'; then
-          ip="${addr%%]*}"
-          ip="${ip#\[}"
-          port="${addr##*:}"
-        else
-          # if there's only one colon, split ip:port
-          cnt=$(awk -F: '{print NF-1}' <<<"$addr")
-          if [ "$cnt" -eq 1 ]; then
-            ip="${addr%:*}"
-            port="${addr##*:}"
-          else
-            ip="$addr"
-            port=""
-          fi
-        fi
+        read -r _ip _port <<<"$(parse_peer "$addr")"
+        ip="${_ip:-$ip}"
+        port="${_port:-$port}"
         [ -n "$ip" ] && pid_to_ip["$pid"]="$ip"
         [ -n "$port" ] && pid_to_port["$pid"]="$port"
       fi
     fi
+
+    start_time="$(ps -p "$pid" -o lstart= 2>/dev/null || true)"
+    if [ -n "$start_time" ]; then
+      ts="$(date -d "$start_time" +%s 2>/dev/null || echo 0)"
+      pid_to_start_time["$pid"]="$ts"
+    else
+      pid_to_start_time["$pid"]=0
+    fi
+  done
+
+  # Build per-user counts
+  declare -A drop_count
+  : > "$USERS_DROP_TMP"
+  for pid in $pids; do
+    [ -z "$pid" ] && continue
+    user="${pid_to_user[$pid]:-(unknown)}"
+    ip="${pid_to_ip[$pid]:-(unknown)}"
+    user_lc="$(lower "$user")"
+    if [ "$user_lc" = "root" ] || [ -z "$user" ] || [ "$user" = "(unknown)" ] || [ "$ip" = "(unknown)" ]; then
+      continue
+    fi
+    drop_count["$user"]=$(( ${drop_count["$user"]:-0} + 1 ))
+    printf '%s\n' "$user" >> "$USERS_DROP_TMP"
   done
 
   printed=0
@@ -118,11 +198,9 @@ else
     ip="${pid_to_ip[$pid]:-(unknown)}"
     port="${pid_to_port[$pid]:-}"
     user_lc="$(lower "$user")"
-    # skip root
     if [ "$user_lc" = "root" ]; then
       continue
     fi
-    # only show if we have both user and ip known
     if [ -z "$user" ] || [ -z "$ip" ] || [ "$user" = "(unknown)" ] || [ "$ip" = "(unknown)" ]; then
       continue
     fi
@@ -131,59 +209,318 @@ else
     else
       ipport="${ip}"
     fi
-    printf '%6s - %s - %s\n' "$pid" "$user" "$ipport"
-    # append user to USERS_TMP for summary counting
-    printf '%s\n' "$user" >> "$USERS_TMP"
+    total="${drop_count[$user]:-1}"
+    start_human="${pid_to_start_time[$pid]:-0}"
+    if [ "$start_human" -gt 0 ]; then
+      start_time_human="$(date -d "@$start_human" '+%H:%M' 2>/dev/null || echo '-')"
+    else
+      start_time_human="-"
+    fi
+
+    # sanitize + truncate (PID numeric => don't append dots)
+    sanitized_pid="$(sanitize_field "$pid")"
+    if [[ "$sanitized_pid" =~ ^[0-9]+$ ]]; then
+      # if pid length longer than column, cut without dots (pid is ASCII digits)
+      if [ "${#sanitized_pid}" -gt "$ID_W" ]; then
+        t_pid="${sanitized_pid:0:$ID_W}"
+      else
+        t_pid="$sanitized_pid"
+      fi
+    else
+      t_pid="$(truncate_field "$pid" "$ID_W")"
+    fi
+
+    t_user="$(truncate_field "$user" "$USER_W")"
+    t_ipport="$(truncate_field "$ipport" "$IP_W")"
+    t_start="$(truncate_field "$start_time_human" "$START_W")"
+    t_total="$(truncate_field "$total" "$TOTAL_W")"
+
+    printf '| %-*s | %-*s | %-*s | %-*s | %-*s |\n' "$ID_W" "$t_pid" "$USER_W" "$t_user" "$IP_W" "$t_ipport" "$START_W" "$t_start" "$TOTAL_W" "$t_total"
+    printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
     printed=1
   done
 
   if [ "$printed" -eq 0 ]; then
-    echo "(no user login detected)"
+    printf '| %-*s | %-*s | %-*s | %-*s | %-*s |\n' $ID_W "(none)" $USER_W "-" $IP_W "-" $START_W "-" $TOTAL_W "-"
+    printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
+    echo "(No User Login Detected)"
   fi
 fi
 
-# ---------------------------
-# OpenSSH section
-# ---------------------------
-echo
-echo "-----=[ OpenSSH User Login ]=-------"
-echo "ID  |  Username  |  IP Address"
+# Dropbear summary
+echo ""
+if [ -s "$USERS_DROP_TMP" ]; then
+  total_drop=$(wc -l < "$USERS_DROP_TMP" 2>/dev/null || echo 0)
+  echo ""
+  echo "Total All Online Users: $total_drop"
+else
+  echo "(No Dropbear Sessions Detected)"
+fi
 echo "------------------------------------"
 
-# choose auth log
-LOG=""
-if [ -r /var/log/auth.log ]; then
-  LOG="/var/log/auth.log"
-elif [ -r /var/log/secure ]; then
-  LOG="/var/log/secure"
+# ---------------------------
+# OpenSSH section (phone-friendly)
+# ---------------------------
+TMP_SS="$(mktemp /tmp/cek-sshd-ss-XXXXXX)" || exit 1
+TMP_JOURNAL="$(mktemp /tmp/cek-sshd-journal-XXXXXX)" || exit 1
+
+# By default skip root; use --all or -a to include root
+SKIP_ROOT=1
+for a in "$@"; do
+  case "$a" in
+    --all|-a) SKIP_ROOT=0 ;;
+    --no-root|-n) SKIP_ROOT=1 ;;
+    *) ;;
+  esac
+done
+
+# journal mapping (optional)
+declare -A j_pid_user j_pid_ip j_pid_port
+if command -v journalctl >/dev/null 2>&1; then
+  journalctl --no-pager -u sshd --since "$SEED_SINCE" -o short-iso 2>/dev/null \
+    | sed -n "s/.*sshd\[\([0-9]\+\)\].*Accepted [^ ]* for \([^ ]\+\) from \(\[[^]]\+\|\([0-9.]\+\|[0-9a-fA-F:]\+\)\) port \([0-9]\+\).*/\1 \2 \3 \5/p" \
+    > "$TMP_JOURNAL" 2>/dev/null || true
+
+  if [ -s "$TMP_JOURNAL" ]; then
+    while IFS=' ' read -r pid user ip port; do
+      [ -z "$pid" ] && continue
+      [ -n "$user" ] && j_pid_user["$pid"]="$user"
+      [ -n "$ip" ] && j_pid_ip["$pid"]="$ip"
+      [ -n "$port" ] && j_pid_port["$pid"]="$port"
+    done <"$TMP_JOURNAL"
+  fi
 fi
 
-if [ -n "$LOG" ]; then
-  grep -i sshd "$LOG" | grep -i "Accepted password for" > "$TMP1" || true
+if ! command -v ss >/dev/null 2>&1; then
+  echo "Perintah 'ss' tidak ditemui. Pasang package 'iproute2'."
+  exit 1
+fi
 
-  data=( $(ps aux | grep "\[priv\]" | sort -k 72 2>/dev/null || true | awk '{print $2}') )
+ss -tnp 2>/dev/null | awk '/sshd/ { print $0 }' > "$TMP_SS" || true
 
-  for PID in "${data[@]}"; do
-    grep "sshd\\[$PID\\]" "$TMP1" > "$TMP2" || true
-    NUM=$(wc -l < "$TMP2" || echo 0)
-    if [ "$NUM" -eq 1 ]; then
-      USER=$(awk '{print $9}' "$TMP2" 2>/dev/null || true)
-      IP=$(awk '{print $11}' "$TMP2" 2>/dev/null || true)
-      if [ -z "$USER" ] || [ -z "$IP" ]; then
-        LINE=$(cat "$TMP2")
-        USER=$(echo "$LINE" | sed -n "s/.*Accepted password for \([[:alnum:]_.-]\+\).*/\1/p" || true)
-        IP=$(echo "$LINE" | sed -n "s/.*from \([0-9.]\+\).*/\1/p" || true)
-      fi
-      printf '%s - %s - %s\n' "$PID" "${USER:-(unknown)}" "${IP:-(unknown)}"
-      # append user for summary if known
-      if [ -n "${USER:-}" ]; then
-        printf '%s\n' "$USER" >> "$USERS_TMP"
+declare -A pid_user pid_ip pid_port pid_start pid_cmd pid_owner
+
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  peer="$(awk '{ print $(NF-1) }' <<<"$line")"
+  users_part="$(sed -n 's/.*users:(\(.*\))/\1/p' <<<"$line" || true)"
+  users_part="${users_part#(}"
+  users_part="${users_part%)}"
+  IFS=')' read -ra entries <<<"$users_part"
+  for ent in "${entries[@]}"; do
+    ent_clean="$(sed 's/^,//; s/^[(]//; s/[()"]//g' <<<"$ent" | tr -d ' ')"
+    pid="$(awk -F',' '{ for(i=1;i<=NF;i++) if ($i ~ /^pid=/) { split($i,a,"="); print a[2]; exit } }' <<<"$ent_clean" || true)"
+    [ -z "$pid" ] && continue
+
+    read -r ip port <<<"$(parse_peer "$peer")"
+    [ -n "$ip" ] && pid_ip["$pid"]="$ip"
+    [ -n "$port" ] && pid_port["$pid"]="$port"
+
+    owner="$(ps -p "$pid" -o user= 2>/dev/null || true)"
+    pid_owner["$pid"]="$owner"
+
+    cmd="$(ps -p "$pid" -o cmd= 2>/dev/null || true)"
+    pid_cmd["$pid"]="$cmd"
+    if [[ "$cmd" =~ sshd[^:]*:\ ([^@[:space:][]+) ]]; then
+      pid_user["$pid"]="${BASH_REMATCH[1]}"
+    elif [[ "$cmd" =~ sshd[^:]*:\ ([^@[:space:]]+)@ ]]; then
+      pid_user["$pid"]="${BASH_REMATCH[1]}"
+    fi
+
+    start="$(ps -p "$pid" -o lstart= 2>/dev/null || true)"
+    if [ -n "$start" ]; then
+      ts="$(date -d "$start" +%s 2>/dev/null || echo 0)"
+      pid_start["$pid"]="$ts"
+    else
+      pid_start["$pid"]=0
+    fi
+
+    # prefer journal mapping if exists
+    if [ -n "${j_pid_user[$pid]:-}" ]; then pid_user["$pid"]="${j_pid_user[$pid]}"; fi
+    if [ -n "${j_pid_ip[$pid]:-}" ]; then pid_ip["$pid"]="${j_pid_ip[$pid]}"; fi
+    if [ -n "${j_pid_port[$pid]:-}" ]; then pid_port["$pid"]="${j_pid_port[$pid]}"; fi
+  done
+done < "$TMP_SS"
+
+# collect pids
+pids_all=()
+if [ ${#pid_start[@]} -eq 0 ]; then
+  mapfile -t pids_all < <(ps -eo pid,cmd --no-headers | awk '/\[priv\]/{print $1}' || true)
+else
+  mapfile -t pids_all < <(printf "%s\n" "${!pid_start[@]}" | sort -n)
+fi
+
+# try lsof for missing IPs
+if command -v lsof >/dev/null 2>&1; then
+  for pid in "${pids_all[@]}"; do
+    [ -z "$pid" ] && continue
+    if [ -z "${pid_ip[$pid]:-}" ]; then
+      out="$(lsof -Pan -p "$pid" -i 2>/dev/null | awk '/ESTABLISHED/ || /->/ { for (i=1;i<=NF;i++) if ($i ~ /->[0-9]/) print $i }' | sed -n '1p' || true)"
+      if [ -n "$out" ]; then
+        if echo "$out" | grep -q '->'; then out="${out#*->}"; fi
+        read -r oip oport <<<"$(parse_peer "$out")"
+        [ -n "$oip" ] && pid_ip["$pid"]="$oip"
+        [ -n "$oport" ] && pid_port["$pid"]="$oport"
       fi
     fi
   done
-else
-  echo "(no auth log found: /var/log/auth.log or /var/log/secure missing or unreadable)"
 fi
+
+# ---------------------------
+# Build rows with duplicate-suppression rules:
+# ---------------------------
+rows_pid=()
+rows_user=()
+rows_ip=()
+rows_port=()
+rows_start_ts=()
+rows_start_human=()
+declare -A seen_key_ts_list
+
+for pid in "${pids_all[@]}"; do
+  [ -z "$pid" ] && continue
+
+  user="${pid_user[$pid]:-}"
+  owner="${pid_owner[$pid]:-}"
+  if [ -z "$user" ]; then user="$owner"; fi
+  if [ -z "$user" ]; then user="nil"; fi
+
+  user_lc="$(lower "$user" || true)"
+
+  if [ "$user_lc" = "root" ] && [ "$SKIP_ROOT" -eq 1 ]; then continue; fi
+  if [ "$user_lc" != "nil" ]; then
+    if [ "$user_lc" = "sshd" ] || [ "$user_lc" = "unknown" ]; then continue; fi
+  fi
+
+  ip="${pid_ip[$pid]:-unknown}"
+  # only include loopback 127.0.0.1 as requested
+  if [ "$ip" != "127.0.0.1" ]; then continue; fi
+
+  port="${pid_port[$pid]:-}"
+  if [ -n "$port" ]; then ipport="${ip}:${port}"; else ipport="$ip"; fi
+
+  start_ts="${pid_start[$pid]:-0}"
+  if [ "$start_ts" -gt 0 ]; then
+    start_human="$(date -d "@$start_ts" '+%H:%M' 2>/dev/null || echo '-')"
+  else
+    start_human='-'
+  fi
+
+  if [ "$user_lc" = "nil" ]; then
+    rows_pid+=("$pid"); rows_user+=("$user"); rows_ip+=("$ipport"); rows_port+=("$port")
+    rows_start_ts+=("$start_ts"); rows_start_human+=("$start_human")
+    continue
+  fi
+
+  key="${user}|${ip}"
+
+  duplicate=0
+  if [ -n "${seen_key_ts_list[$key]:-}" ]; then
+    for exist_ts in ${seen_key_ts_list[$key]}; do
+      diff=$(( start_ts - exist_ts ))
+      if [ $diff -lt 0 ]; then diff=$(( -diff )); fi
+      if [ "$diff" -le 1 ]; then
+        duplicate=1
+        break
+      fi
+    done
+  fi
+
+  if [ "$duplicate" -eq 1 ]; then
+    continue
+  fi
+
+  if [ -z "${seen_key_ts_list[$key]:-}" ]; then
+    seen_key_ts_list[$key]="$start_ts"
+  else
+    seen_key_ts_list[$key]="${seen_key_ts_list[$key]} $start_ts"
+  fi
+
+  rows_pid+=("$pid"); rows_user+=("$user"); rows_ip+=("$ipport"); rows_port+=("$port")
+  rows_start_ts+=("$start_ts"); rows_start_human+=("$start_human")
+done
+
+# ---------------------------
+# Sort rows by start_ts DESC
+# ---------------------------
+rows_count=${#rows_pid[@]}
+if [ "$rows_count" -gt 0 ]; then
+  tmp_sort="$(mktemp /tmp/cek-sshd-sort-XXXXXX)" || tmp_sort="/tmp/cek-sshd-sort-fallback"
+  : > "$tmp_sort"
+  for i in "${!rows_pid[@]}"; do
+    printf '%s\t%s\n' "${rows_start_ts[$i]:-0}" "$i" >> "$tmp_sort"
+  done
+  mapfile -t sorted_idx < <(sort -rn "$tmp_sort" | awk -F'\t' '{print $2}')
+  rm -f "$tmp_sort" 2>/dev/null || true
+else
+  sorted_idx=()
+fi
+
+# ---------------------------
+# Compute totals per user
+# ---------------------------
+declare -A user_total
+for u in "${rows_user[@]}"; do
+  user_total["$u"]=$(( ${user_total["$u"]:-0} + 1 ))
+done
+
+# ---------------------------
+# Phone-friendly ASCII table printing
+# ---------------------------
+ID_W=6
+USER_W=12
+IP_W=20
+START_W=12
+TOTAL_W=4
+
+echo
+echo "-----=[ OpenSSH User Login ]=------"
+printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
+printf '| %-*s | %-*s | %-*s | %-*s | %-*s |\n' "$ID_W" "ID" "$USER_W" "Username" "$IP_W" "IP Address[:port]" "$START_W" "Start" "$TOTAL_W" "Total"
+printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
+
+printed=0
+for idx in "${sorted_idx[@]}"; do
+  pid="${rows_pid[$idx]}"; user="${rows_user[$idx]}"
+  ipport="${rows_ip[$idx]}"; start_human="${rows_start_human[$idx]}"
+  total="${user_total[$user]:-1}"
+
+  # sanitize + truncate for printing
+  sanitized_pid="$(sanitize_field "$pid")"
+  if [[ "$sanitized_pid" =~ ^[0-9]+$ ]]; then
+    if [ "${#sanitized_pid}" -gt "$ID_W" ]; then
+      t_pid="${sanitized_pid:0:$ID_W}"
+    else
+      t_pid="$sanitized_pid"
+    fi
+  else
+    t_pid="$(truncate_field "$pid" "$ID_W")"
+  fi
+
+  t_user="$(truncate_field "$user" "$USER_W")"
+  t_ipport="$(truncate_field "$ipport" "$IP_W")"
+  t_start="$(truncate_field "$start_human" "$START_W")"
+  t_total="$(truncate_field "$total" "$TOTAL_W")"
+
+  printf '| %-*s | %-*s | %-*s | %-*s | %-*s |\n' "$ID_W" "$t_pid" "$USER_W" "$t_user" "$IP_W" "$t_ipport" "$START_W" "$t_start" "$TOTAL_W" "$t_total"
+  printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
+  printed=1
+done
+
+if [ "$printed" -eq 0 ]; then
+  printf '| %-*s | %-*s | %-*s | %-*s | %-*s |\n' $ID_W "(none)" $USER_W "-" $IP_W "-" $START_W "-" $TOTAL_W "-"
+  printf '+-%s-+-%s-+-%s-+-%s-+-%s-+\n' "$(seg $ID_W)" "$(seg $USER_W)" "$(seg $IP_W)" "$(seg $START_W)" "$(seg $TOTAL_W)"
+  echo "(No User Login Detected)"
+fi
+
+# show total OpenSSH sessions detected
+echo ""
+if [ "${rows_count:-0}" -gt 0 ]; then
+  echo "Total All Online Users: $rows_count"
+else
+  echo "(No OpenSSH Sessions Detected)"
+fi
+echo "------------------------------------"
 
 # ---------------------------
 # OpenVPN TCP
@@ -193,8 +530,7 @@ if [ -f "/etc/openvpn/server/openvpn-tcp.log" ]; then
   echo "----=[ OpenVPN TCP User Login ]=----"
   echo "Username  |  IP Address  |  Connected Since"
   echo "------------------------------------"
-  # CLIENT_LIST lines: CSV, fields 2=username,3=ip,8=connected_since
-  grep -w "^CLIENT_LIST" /etc/openvpn/server/openvpn-tcp.log 2>/dev/null | cut -d ',' -f 2,3,8 | sed -e 's/,/      /g' | tee -a "$USERS_TMP" >/dev/null || true
+  grep -w "^CLIENT_LIST" /etc/openvpn/server/openvpn-tcp.log 2>/dev/null | cut -d ',' -f 2,3,8 | sed -e 's/,/      /g' || true
 fi
 
 # ---------------------------
@@ -205,33 +541,8 @@ if [ -f "/etc/openvpn/server/openvpn-udp.log" ]; then
   echo "----=[ OpenVPN UDP User Login ]=----"
   echo "Username  |  IP Address  |  Connected Since"
   echo "------------------------------------"
-  grep -w "^CLIENT_LIST" /etc/openvpn/server/openvpn-udp.log 2>/dev/null | cut -d ',' -f 2,3,8 | sed -e 's/,/      /g' | tee -a "$USERS_TMP" >/dev/null || true
+  grep -w "^CLIENT_LIST" /etc/openvpn/server/openvpn-udp.log 2>/dev/null | cut -d ',' -f 2,3,8 | sed -e 's/,/      /g' || true
 fi
-
-# ---------------------------
-# SUMMARY: total logins per user
-# ---------------------------
-echo
-echo "-----=[ Total Login Setiap User ]=-----"
-if [ -s "$USERS_TMP" ]; then
-  # normalize: some openvpn lines include spaces; extract only the username field for those lines
-  CLEAN_TMP="$(mktemp /tmp/cek-all-clean-XXXXXX)"
-  awk '{print $1}' "$USERS_TMP" > "$CLEAN_TMP" || true
-
-  # per-user breakdown
-  awk '{print $1}' "$CLEAN_TMP" | sort | uniq -c | sort -rn | awk '{printf "%-20s %d\n", $2, $1}'
-  
-    # total sessions (each appended line equals one session entry)
-  total_sessions=$(wc -l < "$CLEAN_TMP" 2>/dev/null || echo 0)
-
-  echo ""
-  echo "Total Online Users: $total_sessions"
-
-  rm -f "$CLEAN_TMP"
-else
-  echo "(no logins detected)"
-fi
-echo "------------------------------------"
 
 # done
 exit 0
